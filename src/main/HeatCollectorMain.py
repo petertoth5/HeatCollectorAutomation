@@ -12,8 +12,9 @@ this demo reads the voltage from channel 1 on the ADC inputs
 
 from __future__ import absolute_import, division, print_function, \
                                                     unicode_literals
-                                                    
-from statistics import mean 
+
+from statistics import mean
+from dataclasses import dataclass
 
 import time
 import os
@@ -31,6 +32,18 @@ from RelayHandling import RelayHandling
 from AuxiliaryFeatures import EnergyProductionCalculation
 from AuxiliaryFeatures import OffsetCalculationAndStorage
 
+
+@dataclass
+class SystemState:
+    tank_temp: float = 0.0
+    roof_temp: float = 0.0
+    tank_temp_init: float = 0.0
+    tank_temp_end: float = 0.0
+    power_calc_initialized: bool = False
+    sun_collector_generating: bool = False
+    generating_during_interval: bool = False
+
+
 # Define Variables
 MQTT_BROKER = "192.168.1.100"
 MQTT_PORT = 1883
@@ -40,15 +53,6 @@ MQTT_TANKTEMP_TOPIC = "TemperatureTank"
 MQTT_SUNCOLLECTOR_POWER_TOPIC = "SunCollectorPower"
 WATER_VOLUME = 30
 INTEGRATION_TIME_SECONDS = 300
-
-# Global variables for temperatures tobe able to pass them to scheduled job.
-TankTempInit = 0
-TankTempEnd = 0
-PowerCalculationInitialized = False
-SunCollectorGenerating = False
-
-TankTemp = 0
-RoofTemp = 0
 
 TankOffset = OffsetCalculationAndStorage.read_and_convert("TankOffset.txt")
 RoofOffset = OffsetCalculationAndStorage.read_and_convert("RoofOffset.txt")
@@ -61,21 +65,18 @@ def on_connect(mosq, obj, rc):
 def on_publish(client, userdata, mid):
 	print ("Message Published...")
 
-def power_calc_job(mqttc):
-
-    global TankTempInit, TankTempEnd, PowerCalculationInitialized, SunCollectorGenerating
-
-    if (PowerCalculationInitialized == False):
-        TankTempInit                = TankTemp
-        TankTempEnd                 = TankTemp
-        PowerCalculationInitialized = True
+def power_calc_job(mqttc, state: SystemState):
+    if not state.power_calc_initialized:
+        state.tank_temp_init = state.tank_temp
+        state.tank_temp_end = state.tank_temp
+        state.power_calc_initialized = True
     else:
-        TankTempInit    = TankTempEnd
-        TankTempEnd     = TankTemp
+        state.tank_temp_init = state.tank_temp_end
+        state.tank_temp_end = state.tank_temp
 
-    power_generation = EnergyProductionCalculation.calculate_energy(WATER_VOLUME, TankTempInit, TankTempEnd, INTEGRATION_TIME_SECONDS, SunCollectorGenerating)
-    
-    # Publish message to MQTT Topic 
+    power_generation = EnergyProductionCalculation.calculate_energy(WATER_VOLUME, state.tank_temp_init, state.tank_temp_end, INTEGRATION_TIME_SECONDS, state.generating_during_interval)
+    state.generating_during_interval = False
+
     mqttc.publish(MQTT_SUNCOLLECTOR_POWER_TOPIC, power_generation)
 
 try:
@@ -96,12 +97,11 @@ def main():
     '''
     Main program function
     '''
-    
-    global TankTemp
-    global RoofTemp
-    global SunCollectorGenerating
+
     global TankOffset
     global RoofOffset
+
+    state = SystemState()
 
     # Initiate MQTT Client
     client_id = f'python-mqtt-{random.randint(0, 1000)}'
@@ -112,15 +112,12 @@ def main():
     mqttc.on_connect = on_connect
 
     # Connect with MQTT Broker
-    mqttc.connect(MQTT_BROKER, MQTT_PORT, MQTT_KEEPALIVE_INTERVAL) 
+    mqttc.connect(MQTT_BROKER, MQTT_PORT, MQTT_KEEPALIVE_INTERVAL)
 
-    schedule.every(INTEGRATION_TIME_SECONDS).seconds.do(power_calc_job, mqttc)
+    schedule.every(INTEGRATION_TIME_SECONDS).seconds.do(power_calc_job, mqttc, state)
 
     # create an instance of the ADC DAC Pi with a DAC gain set to 1
     adcdac = ADCHandler.initADC()
-    
-    roofAvgArray = []
-    tankAvgArray = []
 
     circularBufferRoof = TemperatureFilter.CircularBuffer(200)
     circularBufferTank = TemperatureFilter.CircularBuffer(200)
@@ -154,37 +151,38 @@ def main():
                     errorFlagTank = 1
                 
             if x % 10 == 0:
-                    
+
                 # clear the console
                 os.system('clear')
-                
+
                 if errorFlagTank == 1:
                     print("Sensor problem in tank!")
-                    
+
                 if errorFlagRoof == 1:
                     print("Sensor problem on roof!")
-                
+
                 print("Everything OK, measurements:")
 
-                RoofTemp = round(TemperatureFilter.calculate_average(circularBufferRoof), 1)
+                state.roof_temp = round(TemperatureFilter.calculate_average(circularBufferRoof), 1)
                 print("Roof Temp:")
-                print(RoofTemp, " Celsius")
+                print(state.roof_temp, " Celsius")
 
-                TankTemp = round(TemperatureFilter.calculate_average(circularBufferTank), 1)
+                state.tank_temp = round(TemperatureFilter.calculate_average(circularBufferTank), 1)
                 print("Tank Temp:")
-                print(TankTemp, " Celsius")
+                print(state.tank_temp, " Celsius")
                 
             if x % 25 == 0:
-                # Publish message to MQTT Topic 
-                mqttc.publish(MQTT_ROOFTEMP_TOPIC, RoofTemp)
-                
-                # Publish message to MQTT Topic 
-                mqttc.publish(MQTT_TANKTEMP_TOPIC, TankTemp)
+                # Publish message to MQTT Topic
+                mqttc.publish(MQTT_ROOFTEMP_TOPIC, state.roof_temp)
 
-                if "Relay ON" == RelayHandling.temperature_control(RoofTemp, TankTemp, mqttc):
-                    SunCollectorGenerating = True
+                # Publish message to MQTT Topic
+                mqttc.publish(MQTT_TANKTEMP_TOPIC, state.tank_temp)
+
+                if "Relay ON" == RelayHandling.temperature_control(state.roof_temp, state.tank_temp, mqttc):
+                    state.sun_collector_generating = True
+                    state.generating_during_interval = True
                 else:
-                    SunCollectorGenerating = False
+                    state.sun_collector_generating = False
 
                 schedule.run_pending()
                     
