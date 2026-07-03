@@ -67,6 +67,109 @@ sudo python3 -m installer dist/*.whl
 installing the package.) I2C must also be enabled on the Pi beforehand. Python 3
 only. Repo: https://github.com/abelectronicsuk/ABElectronics_Python_Libraries
 
+## MQTT broker setup (Raspberry Pi)
+
+The script connects to the broker address/port in `MQTT_BROKER`/`MQTT_PORT`
+(`src/main/HeatCollectorMain.py`). The typical deployment runs the Mosquitto broker
+on the same Raspberry Pi as the script (`MQTT_BROKER = "192.168.1.100"` pointing at
+the Pi itself).
+
+Install and enable Mosquitto:
+
+```
+sudo apt install mosquitto mosquitto-clients -y
+sudo systemctl enable --now mosquitto
+```
+
+Verify it's running and listening:
+
+```
+sudo systemctl status mosquitto
+systemctl is-enabled mosquitto     # should print "enabled" (auto-starts on boot)
+ss -tlnp | grep 1883
+```
+
+If `systemctl status` shows `Active: failed`/exit-code, check `journalctl -u mosquitto`
+or `sudo mosquitto -c /etc/mosquitto/mosquitto.conf -v` for the specific config error —
+a common cause is a broken/leftover file under `/etc/mosquitto/conf.d/`.
+
+By default Mosquitto only listens on localhost. Since `HeatCollectorMain.py` runs on
+the same Pi as the broker, that's sufficient. If another machine (e.g. Home Assistant)
+needs to reach this broker over the network, add a listener config:
+
+```
+# /etc/mosquitto/conf.d/listener.conf
+listener 1883 0.0.0.0
+allow_anonymous true
+```
+
+then `sudo systemctl restart mosquitto`. (`allow_anonymous true` has no auth — fine on
+a trusted LAN, not for exposure to untrusted networks.)
+
+To uninstall Mosquitto and the `paho-mqtt` Python client entirely (e.g. for a clean
+reinstall):
+
+```
+sudo systemctl stop mosquitto
+sudo systemctl disable mosquitto
+sudo apt remove --purge mosquitto mosquitto-clients -y
+sudo apt autoremove -y
+sudo rm -rf /etc/mosquitto /var/log/mosquitto /var/lib/mosquitto   # only if you want config wiped too
+
+pip3 uninstall paho-mqtt   # or: sudo apt remove --purge python3-paho-mqtt -y
+```
+
+If the script raises `ConnectionRefusedError: [Errno 111]` on `mqttc.connect(...)`,
+it means nothing is listening at `MQTT_BROKER:MQTT_PORT` — check the broker is
+installed, enabled, and running on the host `MQTT_BROKER` actually points to.
+
+## Running as a systemd service (auto-start on boot)
+
+To have `HeatCollectorMain.py` start automatically after every reboot (and restart
+itself if it crashes), create a systemd unit:
+
+```
+sudo nano /etc/systemd/system/heatcollector.service
+```
+
+```ini
+[Unit]
+Description=Heat Collector Automation
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<your-user>
+WorkingDirectory=/path/to/HeatCollectorAutomation/src/main
+ExecStart=/usr/bin/python3 /path/to/HeatCollectorAutomation/src/main/HeatCollectorMain.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Adjust `User`, `WorkingDirectory`, and `ExecStart` paths to match your install
+location; point `ExecStart` at a virtualenv's `python3` instead if you use one.
+`After=... mosquitto.service` ensures the broker is up before the script tries to
+connect.
+
+Enable and start it:
+
+```
+sudo systemctl daemon-reload
+sudo systemctl enable heatcollector.service
+sudo systemctl start heatcollector.service
+```
+
+Check status and follow logs:
+
+```
+sudo systemctl status heatcollector.service
+journalctl -u heatcollector.service -f
+```
+
 ## Known gaps / TODO
 
 - `MeasurementDataPlausibilityChecker.py` is an empty stub — sensor error flags (`errorFlagRoof`/`errorFlagTank`) are currently set but never used to suppress bad readings or halt relay control.
