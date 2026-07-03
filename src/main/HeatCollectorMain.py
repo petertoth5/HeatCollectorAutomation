@@ -16,7 +16,6 @@ from __future__ import absolute_import, division, print_function, \
 from statistics import mean 
 
 import time
-import os
 import paho.mqtt.client as mqtt
 import random
 import schedule
@@ -118,9 +117,6 @@ def main():
 
     # create an instance of the ADC DAC Pi with a DAC gain set to 1
     adcdac = ADCHandler.initADC()
-    
-    roofAvgArray = []
-    tankAvgArray = []
 
     circularBufferRoof = TemperatureFilter.CircularBuffer(200)
     circularBufferTank = TemperatureFilter.CircularBuffer(200)
@@ -154,10 +150,10 @@ def main():
                     errorFlagTank = 1
                 
             if x % 10 == 0:
-                    
-                # clear the console
-                os.system('clear')
-                
+
+                # clear the console (ANSI escape, avoids spawning a subprocess like os.system('clear'))
+                print("\033[H\033[J", end="")
+
                 if errorFlagTank == 1:
                     print("Sensor problem in tank!")
                     
@@ -175,7 +171,12 @@ def main():
                 print(TankTemp, " Celsius")
                 
             if x % 25 == 0:
-                # Publish message to MQTT Topic 
+                # Recompute averages here too: 25 is not a multiple of 10, so relying on the
+                # x % 10 block alone would publish stale Roof/TankTemp values on these iterations.
+                RoofTemp = round(TemperatureFilter.calculate_average(circularBufferRoof), 1)
+                TankTemp = round(TemperatureFilter.calculate_average(circularBufferTank), 1)
+
+                # Publish message to MQTT Topic
                 mqttc.publish(MQTT_ROOFTEMP_TOPIC, RoofTemp)
                 
                 # Publish message to MQTT Topic 

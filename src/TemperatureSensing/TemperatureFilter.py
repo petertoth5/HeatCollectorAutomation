@@ -5,14 +5,7 @@ def calculate_average(buffer):
         print("Buffer is empty nothing to filter")
         return None
 
-    sum_of_elements = 0
-    current_size = buffer.size
-    current_index = buffer.head
-    for _ in range(current_size):
-        sum_of_elements += buffer.buffer[current_index]
-        current_index = (current_index + 1) % buffer.capacity
-
-    return sum_of_elements / current_size
+    return buffer.sum / buffer.size
 
 class CircularBuffer:
     def __init__(self, capacity):
@@ -21,6 +14,7 @@ class CircularBuffer:
         self.head = 0  # pointer to first element
         self.tail = 0  # pointer to last element
         self.size = 0  # actual size, it's 0 by default
+        self.sum = 0   # running sum of elements currently in the buffer
 
     def is_empty(self):
         return self.size == 0
@@ -32,6 +26,7 @@ class CircularBuffer:
         if self.is_full():
             self.dequeue()
         self.buffer[self.tail] = item
+        self.sum += item
         self.tail = (self.tail + 1) % self.capacity
         if self.size < self.capacity:
             self.size += 1
@@ -42,6 +37,7 @@ class CircularBuffer:
             return None
         item = self.buffer[self.head]
         self.buffer[self.head] = None
+        self.sum -= item
         self.head = (self.head + 1) % self.capacity
         self.size -= 1
         return item
