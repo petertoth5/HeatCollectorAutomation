@@ -22,6 +22,16 @@ and reports temperatures / estimated power production to Home Assistant. See
 - `Design/` — Enterprise Architect model files (binary, don't attempt to edit as text).
 - `ADCDACPi_Python_test/` — vendor demo script, not part of the production control flow.
 
+## Hardware dependency: ADCDACPi library
+
+`ADCHandler.py` and `HeatCollectorMain.py` import `ADCDACPi`, which is not on PyPI.
+It must be installed from the AB Electronics UK library on the target Raspberry Pi
+(see README.md "Dependencies" for exact install steps):
+https://github.com/abelectronicsuk/ABElectronics_Python_Libraries
+Do not assume `pip install ADCDACPi` works — it doesn't. If a task involves running
+or testing the ADC read path, check this dependency is present first rather than
+treating an ImportError as a code bug.
+
 This is a small, single-purpose embedded-control codebase (no test suite, no build
 system, no package manager beyond Python's own imports). It runs unattended on a
 Raspberry Pi controlling physical hardware (relay/pump) — treat control-logic changes

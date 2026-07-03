@@ -48,6 +48,25 @@ Design/
 - **MQTT broker:** address hardcoded in `HeatCollectorMain.py` (`MQTT_BROKER`); topics are `TemperatureRoof`, `TemperatureTank`, `SunCollectorPower`.
 - **Home Assistant:** subscribes to the MQTT topics above; `configuration.yaml` defines the sensors and two derived sensors (temperature difference, integrated/cumulative energy).
 
+## Dependencies
+
+`src/SensorManagement/ADCHandler.py` imports `ADCDACPi`, which is **not** a PyPI
+package — it must be installed from the AB Electronics UK library on the target
+Raspberry Pi:
+
+```
+sudo apt update
+sudo apt install python3-build python3-installer git
+git clone https://github.com/abelectronicsuk/ABElectronics_Python_Libraries.git
+cd ABElectronics_Python_Libraries
+python3 -m build
+sudo python3 -m installer dist/*.whl
+```
+
+(Alternative: copy `ADCDACPi.py` directly into the project directory instead of
+installing the package.) I2C must also be enabled on the Pi beforehand. Python 3
+only. Repo: https://github.com/abelectronicsuk/ABElectronics_Python_Libraries
+
 ## Known gaps / TODO
 
 - `MeasurementDataPlausibilityChecker.py` is an empty stub — sensor error flags (`errorFlagRoof`/`errorFlagTank`) are currently set but never used to suppress bad readings or halt relay control.
