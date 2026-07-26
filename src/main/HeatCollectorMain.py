@@ -137,7 +137,18 @@ def main():
     mqttc.on_connect = on_connect
 
     # Connect with MQTT Broker
-    mqttc.connect(MQTT_BROKER, MQTT_PORT, MQTT_KEEPALIVE_INTERVAL) 
+    mqttc.connect(MQTT_BROKER, MQTT_PORT, MQTT_KEEPALIVE_INTERVAL)
+
+    # Subscribe to user-supplied offset updates
+    mqttc.subscribe(MQTT_ROOFOFFSET_TOPIC)
+    mqttc.subscribe(MQTT_TANKOFFSET_TOPIC)
+    mqttc.message_callback_add(MQTT_ROOFOFFSET_TOPIC, on_roof_offset_message)
+    mqttc.message_callback_add(MQTT_TANKOFFSET_TOPIC, on_tank_offset_message)
+
+    # Run paho's network loop in a background thread so subscribed
+    # messages are delivered; publish() alone doesn't require this,
+    # but subscribe callbacks never fire without it.
+    mqttc.loop_start()
 
     schedule.every(INTEGRATION_TIME_SECONDS).seconds.do(power_calc_job, mqttc)
 
