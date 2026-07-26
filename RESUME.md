@@ -2,77 +2,68 @@
 
 ## Most recent change
 
-Session closed out. Summary of everything done across this multi-session block,
-all now on `main`:
+Implemented MQTT-driven offset updates on branch `feature/mqtt-offset-update`
+(spec: `docs/superpowers/specs/2026-07-26-mqtt-offset-update-design.md`, plan:
+`docs/superpowers/plans/2026-07-26-mqtt-offset-update.md`):
 
-1. **Baseline docs** (PR #3, commit `7b1d750`) — initial `README.md`, `CLAUDE.md`,
-   `RESUME.md`.
-2. **ADCDACPi dependency doc** (commit `0749384`) — README/CLAUDE.md note that
-   `ADCDACPi` is not on PyPI; install from
-   https://github.com/abelectronicsuk/ABElectronics_Python_Libraries.
-3. **MQTT broker + systemd docs** (commit `cfe1b3c`) — README sections for
-   installing/enabling Mosquitto on the Pi, opening it to the LAN if needed,
-   uninstall steps, diagnosing `ConnectionRefusedError`, and running
-   `HeatCollectorMain.py` as a systemd service that starts on boot.
-4. **Efficiency/correctness fixes** (PR #4, merged as commit `ba62c6b`):
-   - `TemperatureFilter.CircularBuffer` now tracks a running `sum` — O(1) average
-     instead of O(n) (up to 200 elements) per call.
-   - Removed unused `roofAvgArray`/`tankAvgArray` in `HeatCollectorMain.py`.
-   - Replaced `os.system('clear')` (subprocess spawn every 10 samples) with an
-     ANSI escape `print("\033[H\033[J", end="")`.
-   - Fixed a staleness bug: Roof/TankTemp were only recomputed in the `x%10==0`
-     block but published separately in `x%25==0`; since 25 isn't a multiple of
-     10, x=25/75 published stale values — now recomputed before publish too.
-   - Removed the now-unused `import os`.
-   - Added `.gitignore` (`__pycache__/`, `*.pyc`).
-5. **Release tags** — `v1.0.0` = `cfe1b3c` (main just before merging PR #4),
-   `v1.1.0` = `ba62c6b` (main after the merge). Rollback options if something's
-   wrong with the efficiency fixes: `git checkout v1.0.0`, or
-   `git reset --hard v1.0.0` on `main`, or a targeted
-   `git revert ba62c6b..v1.1.0`.
-6. Repo GH ruleset `BeforeMerge` (required self-approval) was deleted — `main`
-   currently has **no branch protection**; pushes/merges are direct.
-
-`main` currently sits at `ba62c6b` (tag `v1.1.0`), verified clean.
+- `src/main/HeatCollectorMain.py` now subscribes to `tempRoofOffsetByUser` and
+  `tempTankOffsetByUser`. Each topic has its own `message_callback_add`
+  handler (`on_roof_offset_message`, `on_tank_offset_message`) that parses
+  the payload as a float, updates the in-memory `RoofOffset`/`TankOffset`
+  global immediately, and persists it via the existing
+  `OffsetCalculationAndStorage.write_value()` to `RoofOffset.txt`/
+  `TankOffset.txt`. Invalid (non-numeric) payloads are logged and ignored —
+  no crash, no partial update.
+- Added `mqttc.loop_start()` after `mqttc.connect()`. Previously nothing ran
+  paho's network loop at all; `publish()` happened to work without it, but
+  subscriptions would never have delivered a message.
+- New constants: `MQTT_ROOFOFFSET_TOPIC`, `MQTT_TANKOFFSET_TOPIC`,
+  `ROOF_OFFSET_FILE`, `TANK_OFFSET_FILE` (the latter two replace inline
+  string literals previously used only at startup).
+- Verified with a standalone script (not committed) that stubs the
+  `ADCDACPi` import (its `spidev` dependency is Pi-only) to exercise the
+  real handler functions directly: valid payloads update both the global
+  and the file, invalid payloads change neither. Full subscribe/publish
+  behavior against a real broker, and behavior on real ADC hardware, is
+  **not yet verified** — needs testing on the target Raspberry Pi.
 
 ## Current state
 
-- Codebase still has no automated tests. The `CircularBuffer` running-sum change
-  was manually verified standalone (sliding-window averages matched expected
-  values); not yet run on real Raspberry Pi hardware.
-- `src/TemperatureSensing/MeasurementDataPlausibilityChecker.py` is still an empty
-  stub; `errorFlagRoof`/`errorFlagTank` in `HeatCollectorMain.py` are set on bad
-  readings but never used to suppress publishing or halt relay control — known
-  gap, not addressed.
-- `HATemplates/Sensor value difference.yaml` contains mangled/garbled quote
-  characters (looks like an encoding issue, not valid YAML as-is) — not fixed,
-  flagged only.
-- Local/remote branch `improve_code_quality` still exists post-merge (not
-  deleted); safe to delete, just hasn't been asked for.
-- There's also a stale remote-only branch `fix/issue-4-global-state` (visible in
-  `git branch -a`, not part of any work in this session) — untouched, unclear if
-  still needed.
-- `main` has no branch protection ruleset — pushes/merges there are direct, no
-  required review.
+- Work is on branch `feature/mqtt-offset-update`, not yet merged to `main`.
+  `main` remains at tag `v1.1.0` (commit `ba62c6b`), unaffected and known-good.
+- This feature has not been tested against a live MQTT broker or on the
+  target Pi. Before merging: confirm a message published to
+  `tempRoofOffsetByUser`/`tempTankOffsetByUser` on the real broker actually
+  updates the running process's offset and the text file, and that normal
+  sensor sampling/relay control is unaffected by the added `loop_start()`
+  background thread.
+- Pre-existing open items (unchanged, not addressed by this work):
+  `MeasurementDataPlausibilityChecker.py` is still an empty stub;
+  `HATemplates/Sensor value difference.yaml` still has garbled quote
+  characters; stale branches `improve_code_quality` and
+  `fix/issue-4-global-state` still exist; `main` still has no branch
+  protection ruleset.
 
 ## Continuation prompt
 
 Paste this into a new session to continue:
 
-> Read README.md and CLAUDE.md in this repo first. `main` is at tag `v1.1.0`
-> (commit `ba62c6b`) with `v1.0.0` (commit `cfe1b3c`) tagged as the pre-merge
-> rollback point in case the efficiency fixes in PR #4 (CircularBuffer O(1)
-> average, dead-array removal, os.system('clear') replaced with ANSI escape,
-> stale-average publish bug fixed) cause problems on real hardware. Known open
-> items: (1) `MeasurementDataPlausibilityChecker.py` is an empty stub while
-> `errorFlagRoof`/`errorFlagTank` in `HeatCollectorMain.py` are computed but
-> unused — decide whether to implement plausibility checking or remove the dead
-> flags; (2) `HATemplates/Sensor value difference.yaml` has garbled quote
-> characters, likely an encoding artifact — check and fix if it's meant to be
-> valid YAML; (3) branch `improve_code_quality` (merged) and remote branch
-> `fix/issue-4-global-state` (unrelated, unclear status) could be cleaned up if
-> no longer needed. No test suite exists. `main` has no branch protection
-> ruleset, so pushes there are direct — ask before pushing broad changes if that
-> seems risky. Follow the working principles in CLAUDE.md (surgical changes, ask
-> before assuming on hardware/threshold specifics) and update RESUME.md before
-> finishing.
+> Read README.md and CLAUDE.md, then read
+> `docs/superpowers/specs/2026-07-26-mqtt-offset-update-design.md` and
+> `docs/superpowers/plans/2026-07-26-mqtt-offset-update.md`. Branch
+> `feature/mqtt-offset-update` implements MQTT-driven roof/tank offset
+> updates (topics `tempRoofOffsetByUser`/`tempTankOffsetByUser`, handlers
+> `on_roof_offset_message`/`on_tank_offset_message` in
+> `src/main/HeatCollectorMain.py`, plus a new `mqttc.loop_start()` call).
+> It has only been verified with a stubbed-`ADCDACPi` standalone script in
+> a dev environment — never against a real MQTT broker or on the target
+> Raspberry Pi. Before merging to `main`: test on-target that (1) publishing
+> to either topic updates the running offset and the corresponding text
+> file, (2) an invalid payload is logged and ignored without crashing,
+> (3) normal temperature sampling / relay control / power-calc publishing
+> still works correctly with the new `loop_start()` background thread
+> running. `main` is unaffected and sits at tag `v1.1.0` (commit `ba62c6b`)
+> as a safe fallback. No test suite exists in this repo — verification is
+> via standalone scripts, not pytest. Follow CLAUDE.md's working principles
+> (surgical changes, ask before assuming on hardware/threshold specifics)
+> and update RESUME.md again before finishing.
