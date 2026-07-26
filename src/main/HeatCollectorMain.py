@@ -13,8 +13,9 @@ this demo reads the voltage from channel 1 on the ADC inputs
 from __future__ import absolute_import, division, print_function, \
                                                     unicode_literals
                                                     
-from statistics import mean 
+from statistics import mean
 
+import math
 import time
 import paho.mqtt.client as mqtt
 import random
@@ -57,8 +58,10 @@ TankOffset = OffsetCalculationAndStorage.read_and_convert(TANK_OFFSET_FILE)
 RoofOffset = OffsetCalculationAndStorage.read_and_convert(ROOF_OFFSET_FILE)
 
 # Define on_connect event Handler
-def on_connect(mosq, obj, rc):
+def on_connect(mosq, obj, flags, rc):
 	print ("Connected to MQTT Broker")
+	mosq.subscribe(MQTT_ROOFOFFSET_TOPIC)
+	mosq.subscribe(MQTT_TANKOFFSET_TOPIC)
 
 # Define on_publish event Handler
 def on_publish(client, userdata, mid):
@@ -72,6 +75,9 @@ def on_roof_offset_message(client, userdata, msg):
 	except ValueError:
 		print("Error: received roof offset payload is not a valid number.")
 		return
+	if not math.isfinite(new_offset):
+		print("Error: received roof offset payload is not a finite number.")
+		return
 	RoofOffset = new_offset
 	OffsetCalculationAndStorage.write_value(RoofOffset, ROOF_OFFSET_FILE)
 
@@ -82,6 +88,9 @@ def on_tank_offset_message(client, userdata, msg):
 		new_offset = float(msg.payload.decode().strip())
 	except ValueError:
 		print("Error: received tank offset payload is not a valid number.")
+		return
+	if not math.isfinite(new_offset):
+		print("Error: received tank offset payload is not a finite number.")
 		return
 	TankOffset = new_offset
 	OffsetCalculationAndStorage.write_value(TankOffset, TANK_OFFSET_FILE)
@@ -139,9 +148,9 @@ def main():
     # Connect with MQTT Broker
     mqttc.connect(MQTT_BROKER, MQTT_PORT, MQTT_KEEPALIVE_INTERVAL)
 
-    # Subscribe to user-supplied offset updates
-    mqttc.subscribe(MQTT_ROOFOFFSET_TOPIC)
-    mqttc.subscribe(MQTT_TANKOFFSET_TOPIC)
+    # Register message callbacks for user-supplied offset updates.
+    # Subscriptions themselves are (re-)issued in on_connect, since they
+    # need to run again after every reconnect, not just the first connect.
     mqttc.message_callback_add(MQTT_ROOFOFFSET_TOPIC, on_roof_offset_message)
     mqttc.message_callback_add(MQTT_TANKOFFSET_TOPIC, on_tank_offset_message)
 
