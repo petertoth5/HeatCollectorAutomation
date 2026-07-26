@@ -51,14 +51,14 @@ Implemented MQTT-driven offset updates on branch `feature/mqtt-offset-update`
   environment); the user is pushing and opening the PR manually.
   **⚠️ Update this line with the PR URL once it exists**, so the next
   session doesn't have to search for it.
-- This feature has not been tested against a live MQTT broker or on the
-  target Pi. Before merging: confirm a message published to
-  `tempRoofOffsetByUser`/`tempTankOffsetByUser` on the real broker actually
-  updates the running process's offset and the text file, that an invalid
-  payload (non-numeric, `nan`, `inf`) is rejected without crashing, and that
-  normal sensor sampling/relay control is unaffected by the added
-  `loop_start()` background thread and by `on_connect` now re-subscribing
-  on every (re)connect.
+- **On-target verification: passed.** User confirmed on the real Raspberry
+  Pi / real MQTT broker: publishing to `tempRoofOffsetByUser` /
+  `tempTankOffsetByUser` correctly updates the running offset and the
+  corresponding text file, and normal temperature sampling / relay control
+  is unaffected by the added `loop_start()` background thread and the
+  `on_connect` re-subscribe behavior. The prior "not yet tested on target"
+  blocker is now cleared — remaining work before merge is just the Minor
+  items below (optional) and the PR itself.
 - Two Minor items from the final review, not yet addressed (not blockers):
   `on_connect` doesn't check `rc` before subscribing (a refused CONNACK
   logs a false "Connected" and the subscribes silently no-op); an offset
@@ -89,14 +89,11 @@ Paste this into a new session to continue:
 > `nan`/`inf` rejection on offset payloads.
 > **PR link: <fill in once opened — check if one already exists for
 > `feature/mqtt-offset-update` before assuming it's still missing>.**
-> It has only been verified with a stubbed-`ADCDACPi` standalone script in
-> a dev environment — never against a real MQTT broker or on the target
-> Raspberry Pi. Before merging to `main`: test on-target that (1) publishing
-> to either topic updates the running offset and the corresponding text
-> file, (2) an invalid payload (non-numeric, `nan`, `inf`) is logged and
-> ignored without crashing, (3) normal temperature sampling / relay control /
-> power-calc publishing still works correctly with the new `loop_start()`
-> background thread and `on_connect` re-subscribing on every (re)connect.
+> On-target verification (real Pi, real MQTT broker) has **passed**: the
+> user confirmed publishing to either topic updates the running offset and
+> text file, and normal temperature sampling / relay control is unaffected
+> by `loop_start()` / `on_connect`'s re-subscribe. That was previously the
+> main blocker before merging — it's now cleared.
 > Two Minor items are still open from the final review (not blockers): no
 > `rc` check in `on_connect` before subscribing, and offset changes take
 > ~30s to fully propagate since the circular buffers retain old-offset
