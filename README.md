@@ -45,7 +45,7 @@ Design/
 
 - **Sensors:** two PTC1000 temperature sensors (roof collector, storage tank), read as voltage dividers through the ADCDACPi's two ADC channels (3.3V reference).
 - **Actuator:** Shelly 1 relay controlling the collector circulation pump, commanded via MQTT topic `SunCollector_Shelly/command/switch:0`.
-- **MQTT broker:** address hardcoded in `HeatCollectorMain.py` (`MQTT_BROKER`); topics are `TemperatureRoof`, `TemperatureTank`, `SunCollectorPower`.
+- **MQTT broker:** address hardcoded in `HeatCollectorMain.py` (`MQTT_BROKER`); topics are `TemperatureRoof`, `TemperatureTank`, `SunCollectorPower` (published) and `tempRoofOffsetByUser`, `tempTankOffsetByUser` (subscribed — see below).
 - **Home Assistant:** subscribes to the MQTT topics above; `configuration.yaml` defines the sensors and two derived sensors (temperature difference, integrated/cumulative energy).
 
 ## Dependencies
@@ -122,6 +122,29 @@ pip3 uninstall paho-mqtt   # or: sudo apt remove --purge python3-paho-mqtt -y
 If the script raises `ConnectionRefusedError: [Errno 111]` on `mqttc.connect(...)`,
 it means nothing is listening at `MQTT_BROKER:MQTT_PORT` — check the broker is
 installed, enabled, and running on the host `MQTT_BROKER` actually points to.
+
+## Adjusting sensor calibration offsets via MQTT
+
+`RoofOffset.txt`/`TankOffset.txt` (`src/main/`) hold a calibration offset added to
+each sensor's raw temperature reading; they're read once at startup. To change a
+calibration offset while the script is running, publish the new value as a plain
+number string to the corresponding MQTT topic:
+
+| Topic | Adjusts | Example payload |
+|-------|---------|------------------|
+| `tempRoofOffsetByUser` | `RoofOffset.txt` / roof sensor | `2.5` |
+| `tempTankOffsetByUser` | `TankOffset.txt` / tank sensor | `-1.25` |
+
+```
+mosquitto_pub -h <MQTT_BROKER> -t tempRoofOffsetByUser -m "2.5"
+mosquitto_pub -h <MQTT_BROKER> -t tempTankOffsetByUser -m "-1.25"
+```
+
+The new value takes effect immediately (applied to the next sample) and is
+written back to the corresponding `.txt` file, so it persists across restarts.
+A payload that isn't a valid finite number (not parseable as a float, or
+`nan`/`inf`/`-inf`) is logged and ignored — the offset and file are left
+unchanged, nothing crashes.
 
 ## Running as a systemd service (auto-start on boot)
 
