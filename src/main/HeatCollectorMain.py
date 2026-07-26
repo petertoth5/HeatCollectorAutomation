@@ -13,8 +13,9 @@ this demo reads the voltage from channel 1 on the ADC inputs
 from __future__ import absolute_import, division, print_function, \
                                                     unicode_literals
                                                     
-from statistics import mean 
+from statistics import mean
 
+import math
 import time
 import paho.mqtt.client as mqtt
 import random
@@ -37,6 +38,10 @@ MQTT_KEEPALIVE_INTERVAL = 45
 MQTT_ROOFTEMP_TOPIC = "TemperatureRoof"
 MQTT_TANKTEMP_TOPIC = "TemperatureTank"
 MQTT_SUNCOLLECTOR_POWER_TOPIC = "SunCollectorPower"
+MQTT_ROOFOFFSET_TOPIC = "tempRoofOffsetByUser"
+MQTT_TANKOFFSET_TOPIC = "tempTankOffsetByUser"
+ROOF_OFFSET_FILE = "RoofOffset.txt"
+TANK_OFFSET_FILE = "TankOffset.txt"
 WATER_VOLUME = 30
 INTEGRATION_TIME_SECONDS = 300
 
@@ -49,16 +54,46 @@ SunCollectorGenerating = False
 TankTemp = 0
 RoofTemp = 0
 
-TankOffset = OffsetCalculationAndStorage.read_and_convert("TankOffset.txt")
-RoofOffset = OffsetCalculationAndStorage.read_and_convert("RoofOffset.txt")
+TankOffset = OffsetCalculationAndStorage.read_and_convert(TANK_OFFSET_FILE)
+RoofOffset = OffsetCalculationAndStorage.read_and_convert(ROOF_OFFSET_FILE)
 
 # Define on_connect event Handler
-def on_connect(mosq, obj, rc):
+def on_connect(mosq, obj, flags, rc):
 	print ("Connected to MQTT Broker")
+	mosq.subscribe(MQTT_ROOFOFFSET_TOPIC)
+	mosq.subscribe(MQTT_TANKOFFSET_TOPIC)
 
 # Define on_publish event Handler
 def on_publish(client, userdata, mid):
 	print ("Message Published...")
+
+# Define on_message handler for user-supplied roof offset updates
+def on_roof_offset_message(client, userdata, msg):
+	global RoofOffset
+	try:
+		new_offset = float(msg.payload.decode().strip())
+	except ValueError:
+		print("Error: received roof offset payload is not a valid number.")
+		return
+	if not math.isfinite(new_offset):
+		print("Error: received roof offset payload is not a finite number.")
+		return
+	RoofOffset = new_offset
+	OffsetCalculationAndStorage.write_value(RoofOffset, ROOF_OFFSET_FILE)
+
+# Define on_message handler for user-supplied tank offset updates
+def on_tank_offset_message(client, userdata, msg):
+	global TankOffset
+	try:
+		new_offset = float(msg.payload.decode().strip())
+	except ValueError:
+		print("Error: received tank offset payload is not a valid number.")
+		return
+	if not math.isfinite(new_offset):
+		print("Error: received tank offset payload is not a finite number.")
+		return
+	TankOffset = new_offset
+	OffsetCalculationAndStorage.write_value(TankOffset, TANK_OFFSET_FILE)
 
 def power_calc_job(mqttc):
 
@@ -111,7 +146,18 @@ def main():
     mqttc.on_connect = on_connect
 
     # Connect with MQTT Broker
-    mqttc.connect(MQTT_BROKER, MQTT_PORT, MQTT_KEEPALIVE_INTERVAL) 
+    mqttc.connect(MQTT_BROKER, MQTT_PORT, MQTT_KEEPALIVE_INTERVAL)
+
+    # Register message callbacks for user-supplied offset updates.
+    # Subscriptions themselves are (re-)issued in on_connect, since they
+    # need to run again after every reconnect, not just the first connect.
+    mqttc.message_callback_add(MQTT_ROOFOFFSET_TOPIC, on_roof_offset_message)
+    mqttc.message_callback_add(MQTT_TANKOFFSET_TOPIC, on_tank_offset_message)
+
+    # Run paho's network loop in a background thread so subscribed
+    # messages are delivered; publish() alone doesn't require this,
+    # but subscribe callbacks never fire without it.
+    mqttc.loop_start()
 
     schedule.every(INTEGRATION_TIME_SECONDS).seconds.do(power_calc_job, mqttc)
 
