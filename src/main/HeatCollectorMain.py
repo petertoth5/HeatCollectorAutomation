@@ -64,6 +64,28 @@ def on_connect(mosq, obj, rc):
 def on_publish(client, userdata, mid):
 	print ("Message Published...")
 
+# Define on_message handler for user-supplied roof offset updates
+def on_roof_offset_message(client, userdata, msg):
+	global RoofOffset
+	try:
+		new_offset = float(msg.payload.decode().strip())
+	except ValueError:
+		print("Error: received roof offset payload is not a valid number.")
+		return
+	RoofOffset = new_offset
+	OffsetCalculationAndStorage.write_value(RoofOffset, ROOF_OFFSET_FILE)
+
+# Define on_message handler for user-supplied tank offset updates
+def on_tank_offset_message(client, userdata, msg):
+	global TankOffset
+	try:
+		new_offset = float(msg.payload.decode().strip())
+	except ValueError:
+		print("Error: received tank offset payload is not a valid number.")
+		return
+	TankOffset = new_offset
+	OffsetCalculationAndStorage.write_value(TankOffset, TANK_OFFSET_FILE)
+
 def power_calc_job(mqttc):
 
     global TankTempInit, TankTempEnd, PowerCalculationInitialized, SunCollectorGenerating
