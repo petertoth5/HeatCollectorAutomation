@@ -37,6 +37,10 @@ MQTT_KEEPALIVE_INTERVAL = 45
 MQTT_ROOFTEMP_TOPIC = "TemperatureRoof"
 MQTT_TANKTEMP_TOPIC = "TemperatureTank"
 MQTT_SUNCOLLECTOR_POWER_TOPIC = "SunCollectorPower"
+MQTT_ROOFOFFSET_TOPIC = "tempRoofOffsetByUser"
+MQTT_TANKOFFSET_TOPIC = "tempTankOffsetByUser"
+ROOF_OFFSET_FILE = "RoofOffset.txt"
+TANK_OFFSET_FILE = "TankOffset.txt"
 WATER_VOLUME = 30
 INTEGRATION_TIME_SECONDS = 300
 
@@ -49,8 +53,8 @@ SunCollectorGenerating = False
 TankTemp = 0
 RoofTemp = 0
 
-TankOffset = OffsetCalculationAndStorage.read_and_convert("TankOffset.txt")
-RoofOffset = OffsetCalculationAndStorage.read_and_convert("RoofOffset.txt")
+TankOffset = OffsetCalculationAndStorage.read_and_convert(TANK_OFFSET_FILE)
+RoofOffset = OffsetCalculationAndStorage.read_and_convert(ROOF_OFFSET_FILE)
 
 # Define on_connect event Handler
 def on_connect(mosq, obj, rc):
