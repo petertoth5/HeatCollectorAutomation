@@ -146,6 +146,29 @@ A payload that isn't a valid finite number (not parseable as a float, or
 `nan`/`inf`/`-inf`) is logged and ignored — the offset and file are left
 unchanged, nothing crashes.
 
+## Automatic offset correction from reference sensors
+
+If independent reference roof/tank sensors are available, publish their
+readings to these topics and the Pi will recompute its own calibration
+offset to match, immediately and on every message:
+
+| Topic | Adjusts | Example payload |
+|-------|---------|------------------|
+| `tempRoofReference` | `RoofOffset.txt` / roof sensor | `24.3` |
+| `tempTankReference` | `TankOffset.txt` / tank sensor | `41.8` |
+
+```
+mosquitto_pub -h <MQTT_BROKER> -t tempRoofReference -m "24.3"
+mosquitto_pub -h <MQTT_BROKER> -t tempTankReference -m "41.8"
+```
+
+Unlike the manual `...OffsetByUser` topics (which set the offset directly),
+these topics carry the *true* temperature; the new offset is derived as
+`old_offset + (reference_temp - current_averaged_temp)`, so the Pi's
+reported temperature converges to the reference value rather than being
+overwritten by it. Same payload validation as the manual offset topics: a
+non-finite or unparseable payload is logged and ignored.
+
 ## Running as a systemd service (auto-start on boot)
 
 To have `HeatCollectorMain.py` start automatically after every reboot (and restart
