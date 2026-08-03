@@ -53,11 +53,20 @@ TankTempEnd = 0
 PowerCalculationInitialized = False
 SunCollectorGenerating = False
 
-TankTemp = 0
-RoofTemp = 0
+TankTemp = None
+RoofTemp = None
 
 TankOffset = OffsetCalculationAndStorage.read_and_convert(TANK_OFFSET_FILE)
 RoofOffset = OffsetCalculationAndStorage.read_and_convert(ROOF_OFFSET_FILE)
+
+# Minimum spacing between accepted reference corrections per sensor (seconds).
+# The 200-sample circular buffer takes ~30s to fully reflect an offset change
+# at the ~7 samples/sec sampling rate, so correcting faster than that would
+# apply a second correction against a still-stale average.
+MIN_REFERENCE_CORRECTION_INTERVAL_SECONDS = 30
+
+RoofLastCorrectionTime = None
+TankLastCorrectionTime = None
 
 # Define on_connect event Handler
 def on_connect(mosq, obj, flags, rc):
@@ -104,7 +113,7 @@ def on_tank_offset_message(client, userdata, msg):
 
 # Define on_message handler for reference roof temperature corrections
 def on_roof_reference_message(client, userdata, msg):
-	global RoofOffset
+	global RoofOffset, RoofLastCorrectionTime
 	try:
 		reference_temp = float(msg.payload.decode().strip())
 	except ValueError:
@@ -113,12 +122,23 @@ def on_roof_reference_message(client, userdata, msg):
 	if not math.isfinite(reference_temp):
 		print("Error: received roof reference payload is not a finite number.")
 		return
+	if reference_temp < -20 or reference_temp > 120:
+		print("Error: received roof reference payload is outside plausible range (-20 to 120 C).")
+		return
+	if RoofTemp is None:
+		print("Error: no roof temperature average yet, ignoring reference message.")
+		return
+	if RoofLastCorrectionTime is not None and (time.monotonic() - RoofLastCorrectionTime) < MIN_REFERENCE_CORRECTION_INTERVAL_SECONDS:
+		print("Error: roof reference correction ignored, last correction was less than 30s ago.")
+		return
 	RoofOffset = OffsetCalculationAndStorage.compute_corrected_offset(reference_temp, RoofTemp, RoofOffset)
+	RoofLastCorrectionTime = time.monotonic()
+	print(f"Roof reference {reference_temp}, current avg {RoofTemp}, new offset {RoofOffset}")
 	OffsetCalculationAndStorage.write_value(RoofOffset, ROOF_OFFSET_FILE)
 
 # Define on_message handler for reference tank temperature corrections
 def on_tank_reference_message(client, userdata, msg):
-	global TankOffset
+	global TankOffset, TankLastCorrectionTime
 	try:
 		reference_temp = float(msg.payload.decode().strip())
 	except ValueError:
@@ -127,7 +147,18 @@ def on_tank_reference_message(client, userdata, msg):
 	if not math.isfinite(reference_temp):
 		print("Error: received tank reference payload is not a finite number.")
 		return
+	if reference_temp < -20 or reference_temp > 120:
+		print("Error: received tank reference payload is outside plausible range (-20 to 120 C).")
+		return
+	if TankTemp is None:
+		print("Error: no tank temperature average yet, ignoring reference message.")
+		return
+	if TankLastCorrectionTime is not None and (time.monotonic() - TankLastCorrectionTime) < MIN_REFERENCE_CORRECTION_INTERVAL_SECONDS:
+		print("Error: tank reference correction ignored, last correction was less than 30s ago.")
+		return
 	TankOffset = OffsetCalculationAndStorage.compute_corrected_offset(reference_temp, TankTemp, TankOffset)
+	TankLastCorrectionTime = time.monotonic()
+	print(f"Tank reference {reference_temp}, current avg {TankTemp}, new offset {TankOffset}")
 	OffsetCalculationAndStorage.write_value(TankOffset, TANK_OFFSET_FILE)
 
 def power_calc_job(mqttc):

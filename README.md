@@ -169,6 +169,15 @@ reported temperature converges to the reference value rather than being
 overwritten by it. Same payload validation as the manual offset topics: a
 non-finite or unparseable payload is logged and ignored.
 
+A few additional safeguards apply to reference corrections specifically:
+a reference message is ignored (logged, not fatal) until the Pi has computed
+its first temperature average, since there's nothing yet to correct against;
+corrections are rate-limited to at most one per sensor every 30 seconds,
+since the 200-sample averaging buffer takes about that long to converge
+after an offset change, so a second correction within that window would be
+computed against a still-stale average; and reference temperatures outside
+-20 to 120 °C are rejected as physically implausible for these sensors.
+
 ## Running as a systemd service (auto-start on boot)
 
 To have `HeatCollectorMain.py` start automatically after every reboot (and restart

@@ -2,59 +2,61 @@
 
 ## Most recent change
 
-MQTT-driven offset updates feature, merged to `main` (was branch
-`feature/mqtt-offset-update`, PR opened/merged by the user on GitHub; local
-`main` confirmed synced at commit `b0705d1`):
+Fix wave on `feature/mqtt-reference-offset-correction` following the final
+whole-branch code review of the MQTT reference-temperature offset correction
+feature (topics `tempRoofReference`/`tempTankReference`, handlers
+`on_roof_reference_message`/`on_tank_reference_message` in
+`src/main/HeatCollectorMain.py`, calling
+`OffsetCalculationAndStorage.compute_corrected_offset()`). All five approved
+review findings fixed:
 
-- `src/main/HeatCollectorMain.py` subscribes to `tempRoofOffsetByUser` and
-  `tempTankOffsetByUser`. Each topic has its own `message_callback_add`
-  handler (`on_roof_offset_message`, `on_tank_offset_message`) that parses
-  the payload as a float, updates the in-memory `RoofOffset`/`TankOffset`
-  global immediately, and persists it via
-  `OffsetCalculationAndStorage.write_value()` to `RoofOffset.txt`/
-  `TankOffset.txt`. Invalid or non-finite (`nan`/`inf`) payloads are logged
-  and ignored — no crash, no partial update.
-- Added `mqttc.loop_start()` after `mqttc.connect()` — previously nothing ran
-  paho's network loop, so subscriptions would never have delivered a message.
-- A final whole-branch review caught a pre-existing, previously-dormant bug
-  this feature activated: `on_connect` had the wrong arity for paho-mqtt
-  2.0's VERSION1 API. `loop_start()` would have hit it immediately, silently
-  killing the MQTT loop thread ~1 minute after startup (no offset delivery,
-  no keepalive, so the broker drops the connection and `RelayHandling`'s
-  Shelly relay commands would silently fail while the process kept running).
-  Fixed, along with moving offset-topic subscriptions into `on_connect` (so
-  they survive auto-reconnects) and adding `math.isfinite()` rejection.
-- **On-target verification: passed.** User confirmed on the real Raspberry
-  Pi / real MQTT broker: publishing to either topic updates the running
-  offset and the corresponding text file; normal temperature sampling and
-  relay control are unaffected by `loop_start()` / `on_connect`'s
-  re-subscribe.
-- `README.md` updated with a new "Adjusting sensor calibration offsets via
-  MQTT" section (topic table, `mosquitto_pub` examples, payload/error
-  behavior).
-- Full history: spec `docs/superpowers/specs/2026-07-26-mqtt-offset-update-design.md`,
-  plan `docs/superpowers/plans/2026-07-26-mqtt-offset-update.md`.
+1. **Critical: uninitialized-average poisoning.** `RoofTemp`/`TankTemp`
+   changed from initial value `0` to `None` (0 °C is a legitimate real
+   reading, so it can't double as a sentinel). Both reference handlers now
+   guard on `RoofTemp is None` / `TankTemp is None` and ignore the message
+   (logged, not fatal) if the first real average hasn't been computed yet —
+   protects against a retained-message-on-subscribe race that would
+   otherwise compute `old_offset + (reference_temp - 0)` and persist a wildly
+   wrong offset to disk.
+2. **Rate limiting.** Added `RoofLastCorrectionTime`/`TankLastCorrectionTime`
+   globals (`time.monotonic()`, initialized `None`) and a 30-second minimum
+   spacing between accepted corrections per sensor (matches the ~30s the
+   200-sample circular buffer takes to converge at the ~7 samples/sec
+   sampling rate). Constant: `MIN_REFERENCE_CORRECTION_INTERVAL_SECONDS = 30`.
+3. **Plausibility bound.** Reference payloads outside -20 to 120 °C are now
+   rejected and logged, right after the existing `math.isfinite()` check.
+4. **Correction logging.** Each handler now prints the reference value,
+   current average, and resulting new offset immediately before persisting.
+5. **README.md** "Automatic offset correction from reference sensors"
+   section extended with a short paragraph documenting all three guards
+   (average-not-ready, 30s rate limit, -20..120 °C plausibility bound).
 
-Also discussed (not implemented): adding a Home Assistant dashboard control
-for the offsets via an `mqtt: number:` entity with `command_topic` set to
-`tempRoofOffsetByUser`/`tempTankOffsetByUser`. Noted caveat: the controller
-never publishes the *current* offset back to MQTT, so such a HA entity would
-be write-only (won't reflect the real applied value after a HA restart)
-unless a `state_topic` publish is added on the Python side too — this was
-left as an open option, not decided or built.
+Final guard order in both handlers (identical, verified by reading the code):
+parse → `math.isfinite()` → range check (-20..120) → average-is-`None` check
+→ 30s rate-limit check → compute + apply + log + `write_value()` persist.
+
+`OffsetCalculationAndStorage.compute_corrected_offset()` itself was **not**
+modified — confirmed via a standalone (uncommitted, deleted after use)
+sanity script that it still produces the same results as before this fix
+wave.
+
+Full report: `.superpowers/sdd/2026-07-28-mqtt-reference-offset-correction/final-fix-report.md`.
+Design/plan history: `docs/superpowers/specs/2026-07-28-mqtt-reference-offset-correction-design.md`,
+`docs/superpowers/plans/2026-07-28-mqtt-reference-offset-correction.md`.
 
 ## Current state
 
-- `main` has the offset-update feature merged and verified on target
-  hardware. No known regressions.
-- Two Minor items from the final review, still open, not blockers:
-  `on_connect` doesn't check `rc` before subscribing (a refused CONNACK logs
-  a false "Connected" and the subscribes silently no-op); an offset change
-  takes ~30s to fully propagate since the 200-sample circular buffers retain
-  readings computed with the old offset.
-- Possible next step (discussed, undecided): HA dashboard `number` entity for
-  live offset adjustment, and whether to add a `state_topic` publish of the
-  current offset so the HA entity can reflect real device state.
+- Branch `feature/mqtt-reference-offset-correction` has the feature plus this
+  fix wave committed. Not yet merged to `main`, not yet verified on target
+  hardware (all fixes so far verified only via static parse check + code
+  tracing — no MQTT broker / Pi available in this environment).
+- No known regressions. No plausibility/rate-limit/None-guard bugs
+  outstanding from the review that prompted this fix wave.
+- Still open (unchanged from before this session): on-target manual
+  verification of the whole reference-correction feature (publish via
+  `mosquitto_pub` to `tempRoofReference`/`tempTankReference`, confirm
+  `RoofOffset.txt`/`TankOffset.txt` update and the None/rate-limit/range
+  guards behave as expected against the real sampling loop timing).
 - Pre-existing open items (unchanged, not addressed by this work):
   `MeasurementDataPlausibilityChecker.py` is still an empty stub;
   `HATemplates/Sensor value difference.yaml` still has garbled quote
@@ -66,24 +68,19 @@ left as an open option, not decided or built.
 
 Paste this into a new session to continue:
 
-> Read README.md and CLAUDE.md. `main` has the MQTT-driven offset-update
-> feature merged and verified on target hardware (topics
-> `tempRoofOffsetByUser`/`tempTankOffsetByUser`, handlers in
-> `src/main/HeatCollectorMain.py`; see
-> `docs/superpowers/specs/2026-07-26-mqtt-offset-update-design.md` and
-> `docs/superpowers/plans/2026-07-26-mqtt-offset-update.md` for history).
-> Two Minor items are open from the final review (not blockers): no `rc`
-> check in `on_connect` before subscribing, and offset changes take ~30s to
-> fully propagate through the circular buffers.
-> Last session also discussed (but did not build) a Home Assistant dashboard
-> `number` entity for adjusting the offsets live via
-> `command_topic: tempRoofOffsetByUser`/`tempTankOffsetByUser` in
-> `HAConfigurationYAML/configuration.yaml`. It would be write-only as-is —
-> the Python side never publishes the current offset back to MQTT — so if
-> asked to build this, first ask whether a `state_topic` publish (current
-> `RoofOffset`/`TankOffset` value, published at startup and/or after each
-> update) should be added so the HA entity reflects real device state, or
-> whether write-only is acceptable.
+> Read README.md and CLAUDE.md. Branch `feature/mqtt-reference-offset-correction`
+> has the MQTT reference-temperature offset correction feature implemented
+> and a follow-up fix wave applied (uninitialized-average `None` guards,
+> 30s per-sensor rate limiting, -20..120 °C plausibility bound on the
+> reference value, correction logging, README updates — see
+> `.superpowers/sdd/2026-07-28-mqtt-reference-offset-correction/final-fix-report.md`
+> for the full report and commit hash(es)). All changes are verified so far
+> only via static parse check and manual code tracing — there is no MQTT
+> broker or Raspberry Pi in this environment. Next step is on-target manual
+> verification (publish test payloads via `mosquitto_pub -h <broker> -t
+> tempRoofReference -m "<value>"` and the tank equivalent) once the user has
+> access to the real hardware, then merge this branch to `main` per
+> superpowers:finishing-a-development-branch.
 > Pre-existing open items, unchanged: `MeasurementDataPlausibilityChecker.py`
 > is still an empty stub; `HATemplates/Sensor value difference.yaml` still
 > has garbled quote characters; stale branches `improve_code_quality` and
