@@ -147,12 +147,13 @@ A payload that isn't a valid finite number (not parseable as a float, or
 unchanged, nothing crashes.
 
 The Pi also publishes its currently-applied offset back to MQTT on retained
-topics `RoofOffsetCurrent`/`TankOffsetCurrent`, once at startup and again
-after every accepted change (from either this manual topic or the
-automatic reference-correction topics below). The Home Assistant `Roof
-Offset`/`Tank Offset` dashboard entities subscribe to these topics, so the
-displayed value always matches what's actually applied, regardless of
-which source last changed it.
+topics `RoofOffsetCurrent`/`TankOffsetCurrent`, on every (re)connect to the
+broker and again after every accepted change (from either this manual
+topic or the automatic reference-correction topics below). The Home
+Assistant `Roof Offset`/`Tank Offset` dashboard entities subscribe to these
+topics, so the displayed value always matches what's actually applied,
+regardless of which source last changed it, even after a broker restart
+clears its retained-message store.
 
 ## Automatic offset correction from reference sensors
 

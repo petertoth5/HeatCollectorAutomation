@@ -80,6 +80,14 @@ def on_connect(mosq, obj, flags, rc):
 	mosq.subscribe(MQTT_TANKOFFSET_TOPIC)
 	mosq.subscribe(MQTT_ROOFREFERENCE_TOPIC)
 	mosq.subscribe(MQTT_TANKREFERENCE_TOPIC)
+	# Republish the currently-applied offsets, retained, on every (re)connect
+	# so a freshly (re)subscribed HA dashboard sees the real value immediately
+	# rather than waiting for the next offset change on the Pi. Guarded
+	# against None in case an offset file was unreadable at startup.
+	if RoofOffset is not None:
+		mosq.publish(MQTT_ROOFOFFSETCURRENT_TOPIC, RoofOffset, retain=True)
+	if TankOffset is not None:
+		mosq.publish(MQTT_TANKOFFSETCURRENT_TOPIC, TankOffset, retain=True)
 
 # Define on_publish event Handler
 def on_publish(client, userdata, mid):
@@ -135,7 +143,7 @@ def on_roof_reference_message(client, userdata, msg):
 	if RoofLastCorrectionTime is not None and (time.monotonic() - RoofLastCorrectionTime) < MIN_REFERENCE_CORRECTION_INTERVAL_SECONDS:
 		print("Error: roof reference correction ignored, last correction was less than 30s ago.")
 		return
-	RoofOffset = OffsetCalculationAndStorage.compute_corrected_offset(reference_temp, RoofTemp, RoofOffset)
+	RoofOffset = round(OffsetCalculationAndStorage.compute_corrected_offset(reference_temp, RoofTemp, RoofOffset), 2)
 	RoofLastCorrectionTime = time.monotonic()
 	print(f"Roof reference {reference_temp}, current avg {RoofTemp}, new offset {RoofOffset}")
 	OffsetCalculationAndStorage.write_value(RoofOffset, ROOF_OFFSET_FILE)
@@ -161,7 +169,7 @@ def on_tank_reference_message(client, userdata, msg):
 	if TankLastCorrectionTime is not None and (time.monotonic() - TankLastCorrectionTime) < MIN_REFERENCE_CORRECTION_INTERVAL_SECONDS:
 		print("Error: tank reference correction ignored, last correction was less than 30s ago.")
 		return
-	TankOffset = OffsetCalculationAndStorage.compute_corrected_offset(reference_temp, TankTemp, TankOffset)
+	TankOffset = round(OffsetCalculationAndStorage.compute_corrected_offset(reference_temp, TankTemp, TankOffset), 2)
 	TankLastCorrectionTime = time.monotonic()
 	print(f"Tank reference {reference_temp}, current avg {TankTemp}, new offset {TankOffset}")
 	OffsetCalculationAndStorage.write_value(TankOffset, TANK_OFFSET_FILE)
@@ -232,12 +240,6 @@ def main():
     # messages are delivered; publish() alone doesn't require this,
     # but subscribe callbacks never fire without it.
     mqttc.loop_start()
-
-    # Publish the offsets read from disk at startup, retained, so a
-    # freshly (re)subscribed HA dashboard sees the real value immediately
-    # rather than waiting for the next offset change on the Pi.
-    mqttc.publish(MQTT_ROOFOFFSETCURRENT_TOPIC, RoofOffset, retain=True)
-    mqttc.publish(MQTT_TANKOFFSETCURRENT_TOPIC, TankOffset, retain=True)
 
     schedule.every(INTEGRATION_TIME_SECONDS).seconds.do(power_calc_job, mqttc)
 
