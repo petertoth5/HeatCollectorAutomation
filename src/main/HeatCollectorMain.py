@@ -40,6 +40,8 @@ MQTT_TANKTEMP_TOPIC = "TemperatureTank"
 MQTT_SUNCOLLECTOR_POWER_TOPIC = "SunCollectorPower"
 MQTT_ROOFOFFSET_TOPIC = "tempRoofOffsetByUser"
 MQTT_TANKOFFSET_TOPIC = "tempTankOffsetByUser"
+MQTT_ROOFREFERENCE_TOPIC = "tempRoofReference"
+MQTT_TANKREFERENCE_TOPIC = "tempTankReference"
 ROOF_OFFSET_FILE = "RoofOffset.txt"
 TANK_OFFSET_FILE = "TankOffset.txt"
 WATER_VOLUME = 30
@@ -59,9 +61,14 @@ RoofOffset = OffsetCalculationAndStorage.read_and_convert(ROOF_OFFSET_FILE)
 
 # Define on_connect event Handler
 def on_connect(mosq, obj, flags, rc):
+	if rc != 0:
+		print(f"Error: MQTT connection failed with rc={rc}, not subscribing.")
+		return
 	print ("Connected to MQTT Broker")
 	mosq.subscribe(MQTT_ROOFOFFSET_TOPIC)
 	mosq.subscribe(MQTT_TANKOFFSET_TOPIC)
+	mosq.subscribe(MQTT_ROOFREFERENCE_TOPIC)
+	mosq.subscribe(MQTT_TANKREFERENCE_TOPIC)
 
 # Define on_publish event Handler
 def on_publish(client, userdata, mid):
@@ -93,6 +100,34 @@ def on_tank_offset_message(client, userdata, msg):
 		print("Error: received tank offset payload is not a finite number.")
 		return
 	TankOffset = new_offset
+	OffsetCalculationAndStorage.write_value(TankOffset, TANK_OFFSET_FILE)
+
+# Define on_message handler for reference roof temperature corrections
+def on_roof_reference_message(client, userdata, msg):
+	global RoofOffset
+	try:
+		reference_temp = float(msg.payload.decode().strip())
+	except ValueError:
+		print("Error: received roof reference payload is not a valid number.")
+		return
+	if not math.isfinite(reference_temp):
+		print("Error: received roof reference payload is not a finite number.")
+		return
+	RoofOffset = OffsetCalculationAndStorage.compute_corrected_offset(reference_temp, RoofTemp, RoofOffset)
+	OffsetCalculationAndStorage.write_value(RoofOffset, ROOF_OFFSET_FILE)
+
+# Define on_message handler for reference tank temperature corrections
+def on_tank_reference_message(client, userdata, msg):
+	global TankOffset
+	try:
+		reference_temp = float(msg.payload.decode().strip())
+	except ValueError:
+		print("Error: received tank reference payload is not a valid number.")
+		return
+	if not math.isfinite(reference_temp):
+		print("Error: received tank reference payload is not a finite number.")
+		return
+	TankOffset = OffsetCalculationAndStorage.compute_corrected_offset(reference_temp, TankTemp, TankOffset)
 	OffsetCalculationAndStorage.write_value(TankOffset, TANK_OFFSET_FILE)
 
 def power_calc_job(mqttc):
@@ -153,6 +188,8 @@ def main():
     # need to run again after every reconnect, not just the first connect.
     mqttc.message_callback_add(MQTT_ROOFOFFSET_TOPIC, on_roof_offset_message)
     mqttc.message_callback_add(MQTT_TANKOFFSET_TOPIC, on_tank_offset_message)
+    mqttc.message_callback_add(MQTT_ROOFREFERENCE_TOPIC, on_roof_reference_message)
+    mqttc.message_callback_add(MQTT_TANKREFERENCE_TOPIC, on_tank_reference_message)
 
     # Run paho's network loop in a background thread so subscribed
     # messages are delivered; publish() alone doesn't require this,
