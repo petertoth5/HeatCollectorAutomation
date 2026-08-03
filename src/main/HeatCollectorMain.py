@@ -42,6 +42,8 @@ MQTT_ROOFOFFSET_TOPIC = "tempRoofOffsetByUser"
 MQTT_TANKOFFSET_TOPIC = "tempTankOffsetByUser"
 MQTT_ROOFREFERENCE_TOPIC = "tempRoofReference"
 MQTT_TANKREFERENCE_TOPIC = "tempTankReference"
+MQTT_ROOFOFFSETCURRENT_TOPIC = "RoofOffsetCurrent"
+MQTT_TANKOFFSETCURRENT_TOPIC = "TankOffsetCurrent"
 ROOF_OFFSET_FILE = "RoofOffset.txt"
 TANK_OFFSET_FILE = "TankOffset.txt"
 WATER_VOLUME = 30
@@ -96,6 +98,7 @@ def on_roof_offset_message(client, userdata, msg):
 		return
 	RoofOffset = new_offset
 	OffsetCalculationAndStorage.write_value(RoofOffset, ROOF_OFFSET_FILE)
+	client.publish(MQTT_ROOFOFFSETCURRENT_TOPIC, RoofOffset, retain=True)
 
 # Define on_message handler for user-supplied tank offset updates
 def on_tank_offset_message(client, userdata, msg):
@@ -110,6 +113,7 @@ def on_tank_offset_message(client, userdata, msg):
 		return
 	TankOffset = new_offset
 	OffsetCalculationAndStorage.write_value(TankOffset, TANK_OFFSET_FILE)
+	client.publish(MQTT_TANKOFFSETCURRENT_TOPIC, TankOffset, retain=True)
 
 # Define on_message handler for reference roof temperature corrections
 def on_roof_reference_message(client, userdata, msg):
@@ -135,6 +139,7 @@ def on_roof_reference_message(client, userdata, msg):
 	RoofLastCorrectionTime = time.monotonic()
 	print(f"Roof reference {reference_temp}, current avg {RoofTemp}, new offset {RoofOffset}")
 	OffsetCalculationAndStorage.write_value(RoofOffset, ROOF_OFFSET_FILE)
+	client.publish(MQTT_ROOFOFFSETCURRENT_TOPIC, RoofOffset, retain=True)
 
 # Define on_message handler for reference tank temperature corrections
 def on_tank_reference_message(client, userdata, msg):
@@ -160,6 +165,7 @@ def on_tank_reference_message(client, userdata, msg):
 	TankLastCorrectionTime = time.monotonic()
 	print(f"Tank reference {reference_temp}, current avg {TankTemp}, new offset {TankOffset}")
 	OffsetCalculationAndStorage.write_value(TankOffset, TANK_OFFSET_FILE)
+	client.publish(MQTT_TANKOFFSETCURRENT_TOPIC, TankOffset, retain=True)
 
 def power_calc_job(mqttc):
 
@@ -226,6 +232,12 @@ def main():
     # messages are delivered; publish() alone doesn't require this,
     # but subscribe callbacks never fire without it.
     mqttc.loop_start()
+
+    # Publish the offsets read from disk at startup, retained, so a
+    # freshly (re)subscribed HA dashboard sees the real value immediately
+    # rather than waiting for the next offset change on the Pi.
+    mqttc.publish(MQTT_ROOFOFFSETCURRENT_TOPIC, RoofOffset, retain=True)
+    mqttc.publish(MQTT_TANKOFFSETCURRENT_TOPIC, TankOffset, retain=True)
 
     schedule.every(INTEGRATION_TIME_SECONDS).seconds.do(power_calc_job, mqttc)
 
