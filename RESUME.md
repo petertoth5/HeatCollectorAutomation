@@ -47,9 +47,32 @@ Design/plan history: `docs/superpowers/specs/2026-07-28-mqtt-reference-offset-co
 ## Current state
 
 - Branch `feature/mqtt-reference-offset-correction` has the feature plus this
-  fix wave committed. Not yet merged to `main`, not yet verified on target
-  hardware (all fixes so far verified only via static parse check + code
-  tracing — no MQTT broker / Pi available in this environment).
+  fix wave committed (6 commits ahead of `main`, ending at `1b96759`). Not
+  yet merged to `main`, not yet verified on target hardware (all fixes so
+  far verified only via static parse check + code tracing — no MQTT broker
+  / Pi available in this environment).
+- **Push blocked in this environment:** `git push -u origin
+  feature/mqtt-reference-offset-correction` fails with `Permission denied
+  (publickey)` — this sandbox has no SSH key for
+  `git@github.com:petertoth5/HeatCollectorAutomation.git` (same failure
+  seen on a plain `git pull` earlier in the session). The branch is fully
+  committed and ready; **the user needs to push it themselves** and open
+  the PR against `main` (`git push -u origin
+  feature/mqtt-reference-offset-correction`, then create the PR).
+- Separate, independent branch `fix/on-connect-rc-check` (single commit
+  `d57b4e6`, forked from `main` before the reference-offset work started)
+  also exists locally, also unpushed. It adds the same `rc != 0` early-return
+  guard in `on_connect` that later got bundled into
+  `feature/mqtt-reference-offset-correction`'s commit `226a917` (the
+  reference-offset task brief assumed the guard already existed on `main`;
+  it didn't, so the implementer added it again there, disclosed and
+  reviewed as harmless). Net effect: whichever of these two branches merges
+  to `main` second will produce a no-op/identical diff for that guard — not
+  a conflict, just redundant history. Simplest resolution: after
+  `feature/mqtt-reference-offset-correction` is merged, delete
+  `fix/on-connect-rc-check` (its content is already included); alternatively
+  merge/push `fix/on-connect-rc-check` first if the user wants the rc-check
+  landed on `main` sooner on its own.
 - No known regressions. No plausibility/rate-limit/None-guard bugs
   outstanding from the review that prompted this fix wave.
 - Still open (unchanged from before this session): on-target manual
@@ -76,11 +99,19 @@ Paste this into a new session to continue:
 > `.superpowers/sdd/2026-07-28-mqtt-reference-offset-correction/final-fix-report.md`
 > for the full report and commit hash(es)). All changes are verified so far
 > only via static parse check and manual code tracing — there is no MQTT
-> broker or Raspberry Pi in this environment. Next step is on-target manual
-> verification (publish test payloads via `mosquitto_pub -h <broker> -t
-> tempRoofReference -m "<value>"` and the tank equivalent) once the user has
-> access to the real hardware, then merge this branch to `main` per
-> superpowers:finishing-a-development-branch.
+> broker or Raspberry Pi in this environment. The branch is fully committed
+> (ends at `1b96759`) but could NOT be pushed from this environment — `git
+> push` fails with `Permission denied (publickey)` (no SSH key here for
+> `git@github.com:petertoth5/HeatCollectorAutomation.git`). The user needs
+> to push it themselves and open the PR. There's also a separate unpushed
+> branch `fix/on-connect-rc-check` (commit `d57b4e6`, forked from `main`
+> before this feature) whose single `on_connect` rc-check fix got
+> independently bundled into this feature branch's commit `226a917` too —
+> once `feature/mqtt-reference-offset-correction` merges, `fix/on-connect-
+> rc-check` is redundant and can be deleted. Next step after the user has
+> pushed and merged: on-target manual verification (publish test payloads
+> via `mosquitto_pub -h <broker> -t tempRoofReference -m "<value>"` and the
+> tank equivalent) once the user has access to the real hardware.
 > Pre-existing open items, unchanged: `MeasurementDataPlausibilityChecker.py`
 > is still an empty stub; `HATemplates/Sensor value difference.yaml` still
 > has garbled quote characters; stale branches `improve_code_quality` and
