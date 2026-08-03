@@ -23,20 +23,18 @@ mqtt:
       unit_of_measurement: "°C"
       expire_after: 15
     - name: "TemperatureRoofSensor"
-      unique_id: "TemperatureRoofSensor_001"
+      unique_id: "TemperatureRoofkSensor_001"
       state_topic: "TemperatureRoof"
       device_class: temperature
       unit_of_measurement: "°C"
       expire_after: 15
     - name: "SunCollectorPowerSensor"
-      unique_id: "SunCollectorPowerSensor_001"
       state_topic: "SunCollectorPower"
       device_class: power
       unit_of_measurement: "W"
       expire_after: 330
   number:
     - name: "Roof Offset"
-      unique_id: "RoofOffset_001"
       command_topic: "tempRoofOffsetByUser"
       state_topic: "RoofOffsetCurrent"
       min: -100
@@ -44,7 +42,6 @@ mqtt:
       step: 0.1
       mode: box
     - name: "Tank Offset"
-      unique_id: "TankOffset_001"
       command_topic: "tempTankOffsetByUser"
       state_topic: "TankOffsetCurrent"
       min: -100
