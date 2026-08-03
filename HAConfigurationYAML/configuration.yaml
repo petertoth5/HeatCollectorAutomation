@@ -36,12 +36,14 @@ mqtt:
   number:
     - name: "Roof Offset"
       command_topic: "tempRoofOffsetByUser"
+      state_topic: "RoofOffsetCurrent"
       min: -100
       max: 100
       step: 0.1
       mode: box
     - name: "Tank Offset"
       command_topic: "tempTankOffsetByUser"
+      state_topic: "TankOffsetCurrent"
       min: -100
       max: 100
       step: 0.1

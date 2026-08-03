@@ -146,6 +146,14 @@ A payload that isn't a valid finite number (not parseable as a float, or
 `nan`/`inf`/`-inf`) is logged and ignored — the offset and file are left
 unchanged, nothing crashes.
 
+The Pi also publishes its currently-applied offset back to MQTT on retained
+topics `RoofOffsetCurrent`/`TankOffsetCurrent`, once at startup and again
+after every accepted change (from either this manual topic or the
+automatic reference-correction topics below). The Home Assistant `Roof
+Offset`/`Tank Offset` dashboard entities subscribe to these topics, so the
+displayed value always matches what's actually applied, regardless of
+which source last changed it.
+
 ## Automatic offset correction from reference sensors
 
 If independent reference roof/tank sensors are available, publish their
