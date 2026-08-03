@@ -306,9 +306,16 @@ def main():
 
                 # Publish message to MQTT Topic
                 mqttc.publish(MQTT_ROOFTEMP_TOPIC, RoofTemp)
-                
-                # Publish message to MQTT Topic 
+
+                # Publish message to MQTT Topic
                 mqttc.publish(MQTT_TANKTEMP_TOPIC, TankTemp)
+
+                # Republish the currently-applied offsets on the same cadence,
+                # so the HA dashboard keeps them fresh independently of the
+                # on_connect/on-change publishes (e.g. if a broker restart
+                # dropped the retained message without the Pi reconnecting).
+                mqttc.publish(MQTT_ROOFOFFSETCURRENT_TOPIC, RoofOffset, retain=True)
+                mqttc.publish(MQTT_TANKOFFSETCURRENT_TOPIC, TankOffset, retain=True)
 
                 if "Relay ON" == RelayHandling.temperature_control(RoofTemp, TankTemp, mqttc):
                     SunCollectorGenerating = True
