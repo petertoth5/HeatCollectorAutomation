@@ -15,3 +15,6 @@ def write_value(tempOffset, file_path):
         print(f"tempOffset {tempOffset} written to {file_path}")
     except Exception as e:
         print(f"Error writing value: {e}")
+
+def compute_corrected_offset(reference_temp, current_avg_temp, old_offset):
+    return old_offset + (reference_temp - current_avg_temp)
